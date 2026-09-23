@@ -1,0 +1,12 @@
+# External check: every node answers on its public address, as seen from the controller.
+- name: Verify llama.cpp fleet
+  hosts: nodes
+  gather_facts: false
+  tasks:
+    - name: Verify llama-server on {{ inventory_hostname }}
+      ansible.builtin.include_role:
+        name: llama_cpp
+        tasks_from: verify
+      vars:
+        llama_cpp_verify_from: localhost
+        llama_cpp_verify_url: http://{{ hostvars[inventory_hostname].ansible_host }}:{{ llama_cpp_port }}

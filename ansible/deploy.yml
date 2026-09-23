@@ -1,0 +1,12 @@
+# Rolling deploy: one node at a time, each must pass its health check.
+# Any failed node stops the rollout, leaving the remaining nodes on the old release.
+- name: Deploy llama.cpp
+  hosts: nodes
+  become: true
+  serial: 1
+  max_fail_percentage: 0
+  tasks:
+    - name: Deploy llama.cpp {{ llama_cpp_version }}
+      ansible.builtin.include_role:
+        name: llama_cpp
+        tasks_from: deploy

@@ -1,0 +1,114 @@
+- name: Map host architecture to build arch
+  ansible.builtin.set_fact:
+    llama_cpp_arch: "{{ {'x86_64': 'x64', 'aarch64': 'arm64'}[ansible_facts.architecture] | default('') }}"
+
+- name: Fail on unsupported architecture
+  ansible.builtin.assert:
+    that: llama_cpp_arch | length > 0
+    fail_msg: "No llama.cpp build for {{ ansible_facts.architecture }}"
+
+- name: Detect NVIDIA driver
+  ansible.builtin.stat:
+    path: /dev/nvidiactl
+  register: llama_cpp_nvidia
+  when: llama_cpp_variant == 'auto'
+
+- name: Select release
+  vars:
+    variant: "{{ llama_cpp_variant if llama_cpp_variant != 'auto' else ('gpu' if llama_cpp_nvidia.stat.exists else 'cpu') }}"
+  ansible.builtin.set_fact:
+    llama_cpp_package: llama-cpp-{{ llama_cpp_version }}-linux-{{ llama_cpp_arch }}-{{ variant }}.tar.gz
+    llama_cpp_release_dir: "{{ llama_cpp_install_dir }}/releases/{{ llama_cpp_version }}-{{ variant }}"
+
+- name: Create release directory
+  ansible.builtin.file:
+    path: "{{ llama_cpp_release_dir }}"
+    state: directory
+    mode: "0755"
+
+# Releases are immutable, so skip the (large) upload once unpacked.
+- name: Unpack {{ llama_cpp_package }}
+  ansible.builtin.unarchive:
+    src: "{{ llama_cpp_artifact_dir }}/{{ llama_cpp_package }}"
+    dest: "{{ llama_cpp_release_dir }}"
+    creates: "{{ llama_cpp_release_dir }}/llama-server"
+    owner: root
+    group: root
+
+- name: Activate release
+  ansible.builtin.file:
+    src: "{{ llama_cpp_release_dir }}"
+    dest: "{{ llama_cpp_install_dir }}/current"
+    state: link
+  notify: Restart llama-server
+
+# Root-only, so the API key stays out of the unit file and the process arguments.
+- name: Install llama-server environment
+  ansible.builtin.template:
+    src: llama-server.env.j2
+    dest: /etc/llama-server.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart llama-server
+
+- name: Install systemd unit
+  ansible.builtin.template:
+    src: llama-server.service.j2
+    dest: /etc/systemd/system/llama-server.service
+    mode: "0644"
+  notify: Restart llama-server
+
+- name: Enable llama-server
+  ansible.builtin.systemd_service:
+    name: llama-server
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: llama_cpp_model_args | length > 0
+
+- name: Apply restart before health check
+  ansible.builtin.meta: flush_handlers
+
+# Allow up to 10 minutes: the first start downloads the model.
+- name: Verify llama-server
+  ansible.builtin.include_tasks: verify.yml
+  vars:
+    llama_cpp_verify_url: http://127.0.0.1:{{ llama_cpp_port }}
+    llama_cpp_verify_retries: 60
+  when: llama_cpp_model_args | length > 0
+
+# Catch a server that is healthy but still running the previous release.
+- name: Read llama-server main PID
+  ansible.builtin.systemd_service:
+    name: llama-server
+  register: llama_cpp_service
+  when: llama_cpp_model_args | length > 0
+
+- name: Resolve llama-server binary
+  ansible.builtin.stat:
+    path: /proc/{{ llama_cpp_service.status.MainPID }}/exe
+  register: llama_cpp_exe
+  when: llama_cpp_model_args | length > 0
+
+- name: Check llama-server runs {{ llama_cpp_release_dir }}
+  ansible.builtin.assert:
+    that: llama_cpp_exe.stat.lnk_source | default('') == llama_cpp_release_dir ~ '/llama-server'
+    fail_msg: "llama-server (PID {{ llama_cpp_service.status.MainPID }}) runs {{ llama_cpp_exe.stat.lnk_source | default('nothing') }}"
+  when: llama_cpp_model_args | length > 0
+
+- name: Find releases
+  ansible.builtin.find:
+    paths: "{{ llama_cpp_install_dir }}/releases"
+    file_type: directory
+  register: llama_cpp_releases
+
+- name: Remove old releases
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (llama_cpp_releases.files | sort(attribute='mtime', reverse=true))[llama_cpp_keep_releases:] }}"
+  when: item.path != llama_cpp_release_dir
+  loop_control:
+    label: "{{ item.path }}"

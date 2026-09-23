@@ -1,0 +1,25 @@
+# Pinned in LLAMA_CPP_VERSION at the repo root, shared with the build workflow.
+llama_cpp_version: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../LLAMA_CPP_VERSION') }}"
+# auto: gpu when an NVIDIA driver is loaded, otherwise cpu.
+llama_cpp_variant: auto
+# Build tarballs, from `make build` or `make fetch`.
+llama_cpp_artifact_dir: "{{ playbook_dir }}/../dist"
+llama_cpp_install_dir: /opt/llama.cpp
+llama_cpp_keep_releases: 3
+llama_cpp_user: llama
+llama_cpp_home: /var/lib/llama.cpp
+
+llama_cpp_host: 0.0.0.0
+llama_cpp_port: 8080
+# Model arguments for llama-server, e.g. "-hf <user>/<repo>-GGUF" or "-m /path/model.gguf".
+# The service is only started once this is set. Defaults to $LLAMA_CPP_MODEL_ARGS (set by the Makefile).
+llama_cpp_model_args: "{{ lookup('ansible.builtin.env', 'LLAMA_CPP_MODEL_ARGS') }}"
+llama_cpp_extra_args: "--metrics"
+# Required as a Bearer token on every endpoint except /health and /models. Empty disables auth.
+llama_cpp_api_key: ""
+
+# Where verify.yml checks from and against. The deploy checks each node locally;
+# the verify playbook checks every node's address from the controller.
+llama_cpp_verify_from: "{{ inventory_hostname }}"
+llama_cpp_verify_url: http://127.0.0.1:{{ llama_cpp_port }}
+llama_cpp_verify_retries: 3

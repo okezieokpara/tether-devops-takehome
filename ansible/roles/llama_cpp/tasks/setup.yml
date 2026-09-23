@@ -1,0 +1,17 @@
+- name: Install runtime dependencies
+  ansible.builtin.apt:
+    name: libgomp1
+    state: present
+
+- name: Create service user
+  ansible.builtin.user:
+    name: "{{ llama_cpp_user }}"
+    system: true
+    home: "{{ llama_cpp_home }}"
+    shell: /usr/sbin/nologin
+
+- name: Create releases directory
+  ansible.builtin.file:
+    path: "{{ llama_cpp_install_dir }}/releases"
+    state: directory
+    mode: "0755"

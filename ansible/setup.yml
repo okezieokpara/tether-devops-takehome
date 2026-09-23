@@ -1,0 +1,10 @@
+- name: Prepare nodes
+  hosts: nodes
+  become: true
+  roles:
+    - common
+  tasks:
+    - name: Prepare llama.cpp host
+      ansible.builtin.include_role:
+        name: llama_cpp
+        tasks_from: setup

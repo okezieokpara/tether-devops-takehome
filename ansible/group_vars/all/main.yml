@@ -1,0 +1,4 @@
+timezone: UTC
+
+# Secrets live in the encrypted vault.yml next to this file; see `make vault`.
+llama_cpp_api_key: "{{ vault_llama_cpp_api_key }}"

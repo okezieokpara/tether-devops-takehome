@@ -1,0 +1,15 @@
+[Unit]
+Description=llama.cpp server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User={{ llama_cpp_user }}
+WorkingDirectory={{ llama_cpp_home }}
+Environment=LLAMA_CACHE={{ llama_cpp_home }}/cache
+EnvironmentFile=/etc/llama-server.env
+ExecStart={{ llama_cpp_install_dir }}/current/llama-server --host {{ llama_cpp_host }} --port {{ llama_cpp_port }} {{ llama_cpp_model_args }} {{ llama_cpp_extra_args }}
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

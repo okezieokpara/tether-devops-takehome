@@ -1,0 +1,6 @@
+- name: Restart llama-server
+  ansible.builtin.systemd_service:
+    name: llama-server
+    state: restarted
+    daemon_reload: true
+  when: llama_cpp_model_args | length > 0

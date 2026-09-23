@@ -1,0 +1,13 @@
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - git
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ timezone }}"

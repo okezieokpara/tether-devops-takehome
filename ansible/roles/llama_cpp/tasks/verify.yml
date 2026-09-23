@@ -1,0 +1,44 @@
+# Checks llama_cpp_verify_url from llama_cpp_verify_from: the model is loaded and generates.
+
+# /health returns 503 until the model is loaded (first start may download it).
+- name: Wait for llama-server to become healthy
+  ansible.builtin.uri:
+    url: "{{ llama_cpp_verify_url }}/health"
+  register: llama_cpp_health
+  until: llama_cpp_health.status == 200
+  retries: "{{ llama_cpp_verify_retries }}"
+  delay: 10
+  delegate_to: "{{ llama_cpp_verify_from }}"
+
+# /health only means the weights are loaded; make sure it can actually generate.
+- name: Generate a token
+  ansible.builtin.uri:
+    url: "{{ llama_cpp_verify_url }}/completion"
+    method: POST
+    body_format: json
+    headers: "{{ {'Authorization': 'Bearer ' ~ llama_cpp_api_key} if llama_cpp_api_key else {} }}"
+    body:
+      prompt: Hello
+      n_predict: 1
+    timeout: 60
+  register: llama_cpp_completion
+  failed_when: llama_cpp_completion.status != 200 or llama_cpp_completion.json.content is not defined
+  # The request carries the API key.
+  no_log: "{{ llama_cpp_api_key | length > 0 }}"
+  delegate_to: "{{ llama_cpp_verify_from }}"
+
+- name: Check requests without the API key are refused
+  ansible.builtin.uri:
+    url: "{{ llama_cpp_verify_url }}/completion"
+    method: POST
+    body_format: json
+    body:
+      prompt: Hello
+      n_predict: 1
+    status_code: 401
+  when: llama_cpp_api_key | length > 0
+  delegate_to: "{{ llama_cpp_verify_from }}"
+
+- name: Report llama-server is serving
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }} is serving completions at {{ llama_cpp_verify_url }}"
