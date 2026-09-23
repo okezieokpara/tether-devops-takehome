@@ -5,10 +5,130 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: build (${{ matrix.arch }}, ${{ matrix.variant }})
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+        variant: [cpu, gpu]
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+          # Build inside Ubuntu 24.04 so the glibc matches the target hosts.
+          - variant: cpu
+            image: ubuntu:24.04
+            cmake_args: ""
+            ccache_size: 500M
+          - variant: gpu
+            image: nvidia/cuda:12.8.1-devel-ubuntu24.04
+            cmake_args: -DGGML_CUDA=ON -DGGML_CUDA_NCCL=OFF
+            ccache_size: 2G
+
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.image }}
+
     steps:
-      - name: Checkout
+      # GitHub mounts node into job containers, act does not; JS actions need it.
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential gcc-14 g++-14 cmake git ca-certificates libssl-dev ccache
+          command -v node || apt-get install -y --no-install-recommends nodejs
+          git config --global --add safe.directory "*"
+          {
+            echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache"
+            echo "CCACHE_MAXSIZE=${{ matrix.ccache_size }}"
+            echo "CCACHE_SLOPPINESS=time_macros"
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout version pin
         uses: actions/checkout@v4
+        with:
+          path: config
+          sparse-checkout: LLAMA_CPP_VERSION
+          sparse-checkout-cone-mode: false
+
+      - name: Read version pin
+        run: echo "LLAMA_CPP_VERSION=$(cat config/LLAMA_CPP_VERSION)" >> "$GITHUB_ENV"
+
+      - name: Checkout llama.cpp
+        uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: ${{ env.LLAMA_CPP_VERSION }}
+          path: llama.cpp
+          fetch-depth: 1
+          fetch-tags: false
+          submodules: false
+          lfs: false
+          persist-credentials: false
+
+      - name: Get llama.cpp revision
+        id: rev
+        run: echo "sha=$(git -C llama.cpp rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # One cache per upstream commit; a new commit starts from the closest older cache.
+      - name: Restore ccache
+        id: ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-${{ matrix.arch }}-${{ matrix.variant }}-${{ steps.rev.outputs.sha }}
+          restore-keys: ccache-${{ matrix.arch }}-${{ matrix.variant }}-
+
+      # GCC 14 is needed for the armv9.2 (SME) variant of GGML_CPU_ALL_VARIANTS.
+      # BACKEND_DL + CPU_ALL_VARIANTS picks the best CPU kernels at runtime, and
+      # the $ORIGIN rpath makes the unpacked directory self-contained.
+      # ggml's CMake picks up ccache automatically (C, C++ and CUDA).
+      - name: Configure
+        working-directory: llama.cpp
+        env:
+          CC: gcc-14
+          CXX: g++-14
+        run: |
+          # shellcheck disable=SC2016 # $ORIGIN is for the linker, not the shell
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_RPATH='$ORIGIN' \
+            -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
+            -DGGML_NATIVE=OFF \
+            -DGGML_BACKEND_DL=ON \
+            -DGGML_CPU_ALL_VARIANTS=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            ${{ matrix.cmake_args }}
 
       - name: Build
-        run: echo "Build step pending"
+        working-directory: llama.cpp
+        run: |
+          ccache --zero-stats
+          cmake --build build --config Release -j "$(nproc)"
+          ccache --show-stats
+
+      # Save even if the build fails, so a retry resumes from the partial cache.
+      - name: Save ccache
+        if: always() && steps.ccache.outputs.cache-primary-key != '' && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
+
+      # Ship the CUDA runtime alongside the binaries so GPU hosts only need the driver.
+      - name: Bundle CUDA runtime
+        if: matrix.variant == 'gpu'
+        run: cp -L /usr/local/cuda/lib64/libcudart.so.12 /usr/local/cuda/lib64/libcublas.so.12 /usr/local/cuda/lib64/libcublasLt.so.12 llama.cpp/build/bin/
+
+      - name: Package
+        run: |
+          echo "$LLAMA_CPP_VERSION ${{ steps.rev.outputs.sha }}" > llama.cpp/build/bin/VERSION
+          tar -czf "llama-cpp-$LLAMA_CPP_VERSION-linux-${{ matrix.arch }}-${{ matrix.variant }}.tar.gz" -C llama.cpp/build/bin .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-cpp-${{ env.LLAMA_CPP_VERSION }}-linux-${{ matrix.arch }}-${{ matrix.variant }}
+          path: llama-cpp-${{ env.LLAMA_CPP_VERSION }}-linux-${{ matrix.arch }}-${{ matrix.variant }}.tar.gz
+          if-no-files-found: error
