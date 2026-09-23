@@ -1,0 +1,10 @@
+[nodes]
+%{ for name, ip in hosts ~}
+${name} ansible_host=${ip}
+%{ endfor ~}
+
+[nodes:vars]
+ansible_user=${ansible_user}
+# Relative to this file, so the inventory works from any checkout.
+ansible_ssh_private_key_file={{ inventory_dir }}/../terraform/.generated/ansible_ssh_key
+ansible_ssh_common_args='-o StrictHostKeyChecking=accept-new'
