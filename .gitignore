@@ -1,0 +1,12 @@
+# Build artifacts (act artifact server output and collected tarballs)
+artifacts/
+dist/
+
+# Ansible Vault password (see `make vault`)
+ansible/.vault_pass
+
+# Saved Terraform plan (see `make plan`)
+terraform/tfplan
+.ansible/
+# Python environment for the e2e tests (see `make e2e`)
+.venv/
