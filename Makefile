@@ -13,9 +13,10 @@ export LLAMA_CPP_MODEL_ARGS ?= -hf ggml-org/gemma-3-1b-it-GGUF
 .PHONY: build fetch vault api-key plan up setup deploy verify e2e destroy check clean
 
 build: ## Build the ARCH/VARIANT tarball (default: this machine, cpu) with act, into dist/
+	rm -rf artifacts/*/llama-cpp-$(LLAMA_CPP_VERSION)-linux-$(ARCH)-$(VARIANT)
 	act push -W .github/workflows/build.yml --matrix arch:$(ARCH) --matrix variant:$(VARIANT)
 	mkdir -p dist
-	for z in artifacts/*/llama-cpp-*/*.zip; do unzip -oq "$$z" -d dist; done
+	for z in artifacts/*/llama-cpp-$(LLAMA_CPP_VERSION)-linux-$(ARCH)-$(VARIANT)/*.zip; do unzip -oq "$$z" -d dist; done
 
 fetch: ## Download the latest successful CI build on main into dist/ instead
 	mkdir -p dist

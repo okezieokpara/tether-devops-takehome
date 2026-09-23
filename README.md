@@ -45,7 +45,7 @@ Locally with act (`.actrc` sets runner images and the artifact path). After each
 matching arch, since the other one runs under emulation:
 
     act push --matrix arch:arm64 --matrix variant:cpu
-    mkdir -p dist && for z in artifacts/*/llama-cpp-*/*.zip; do python3 -m zipfile -e "$z" dist; done
+    mkdir -p dist && for z in artifacts/*/llama-cpp-*-linux-arm64-cpu/*.zip; do unzip -oq "$z" -d dist; done
 
 Or from a GitHub Actions run:
 
