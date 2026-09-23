@@ -43,6 +43,14 @@ resource "local_file" "ansible_inventory" {
   filename        = "${path.module}/../ansible/inventory.ini"
   file_permission = "0644"
   content         = local.ansible_inventory
+
+  lifecycle {
+    # Multipass can report a stale or shared IP for a VM whose DHCP failed.
+    precondition {
+      condition     = length(distinct([for vm in multipass_instance.vm : vm.ipv4])) == length(multipass_instance.vm)
+      error_message = "Multipass VMs share an IPv4 address (${join(", ", [for vm in multipass_instance.vm : "${vm.name}=${vm.ipv4}"])}); replace the duplicate with terraform apply -replace."
+    }
+  }
 }
 
 resource "local_sensitive_file" "ssh_key" {
