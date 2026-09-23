@@ -1,7 +1,11 @@
+## Supported platforms
+macOS and Linux. On Windows, run everything inside WSL2, which counts as Linux here: enable systemd in `/etc/wsl.conf`, install Multipass inside WSL with snap (this needs nested virtualization, on Windows 11), and use Docker Desktop's WSL integration for `act`. Native Windows is not supported, because Ansible can't run there as the control node.
+
 ## Pre requisties
+- Either of Linux (ubuntu), Mac, WSL (on windows) platforms
 - Local github workflows with `nektos/act` - https://github.com/nektos/act
 - Terraform >= v1.5
-- Multipass v1.16.3+mac
+- Multipass >= v1.16
 - Ansible core v2.21.3
 - Python >= 3.9 with the `venv` module, for `make e2e`. The first run installs pytest and requests into `.venv/` from PyPI, so it needs internet access.
 
@@ -41,7 +45,7 @@ Locally with act (`.actrc` sets runner images and the artifact path). After each
 matching arch, since the other one runs under emulation:
 
     act push --matrix arch:arm64 --matrix variant:cpu
-    mkdir -p dist && for z in artifacts/*/llama-cpp-*/*.zip; do unzip -oq "$z" -d dist; done
+    mkdir -p dist && for z in artifacts/*/llama-cpp-*/*.zip; do python3 -m zipfile -e "$z" dist; done
 
 Or from a GitHub Actions run:
 
